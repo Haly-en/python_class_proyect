@@ -1,0 +1,404 @@
+---
+title: Graficando datos de fluorescencia <br> data from `Synergy H1`
+subtitle: "Proyecto python"
+author: "Maricela Carrera"
+format: kakashi-revealjs
+freeze: auto
+embed-resources: true
+---
+
+```{r setup, include=FALSE}
+options(
+  tibble.max_extra_cols = 6, 
+  tibble.width = 60
+)
+```
+
+
+
+## Introducción 
+
+::: panel-tabset
+
+## Lector de placas
+
+![Lector](reader.png)
+
+## Carga de la placa
+
+![](plate.png)
+
+## Graficos por software <br> del equipo
+
+![Gráficas generadas con el software Gen5](gen5_ejemplo.png)
+
+:::
+
+## Tipo de datos
+
+```{r}
+#| label: kable-TABL
+#| echo: false
+#| fig-height: 3
+#| fig-align: center
+#| eval: true
+table <- read.csv("data.csv", header = TRUE, sep = ",")
+
+knitr::kable(table)
+```
+
+## Carga de la muestra
+
+::: {.callout-note appearance="simple" con="false"}
+
+## Problema 
+
+En el laboratorio se generan `datos derivados de la lectura de actividad enzimática medida por fluorescencia`, estos datos se tienen que reordenar para después realizar análisis estadísticos y finalmente generar gráficas como resultado final para el análisis de sus datos
+:::
+
+. . .
+
+```{r, echo=FALSE, warning=FALSE,message=FALSE, fig.align='center', fig.cap="Samples Desordenadas", fig.height= 6}
+library(ggplate)
+# Load a continuous of discrete values for a 48-well plate
+data(data_continuous_48_incomplete)
+
+#> tibble [48 × 2] (S3: tbl_df/tbl/data.frame)
+#>  $ Value: num [1:48] 1.14 0.46 0.72 0.17 NA NA NA NA 1.37 0.37 ...
+#>  $ well : chr [1:48] "A1" "A2" "A3" "A4" ...
+
+# Create a 48-well plot with adjusted legend limits
+plate_plot(
+  data = data_continuous_48_incomplete,
+  position = well,
+  value = Value,
+  plate_type = "round",
+  plate_size = 48,
+  show_legend = FALSE,
+)
+```
+
+
+
+## Resolver el problema de carga
+
+. . .
+
+**Estandarizar** datos de entrada:
+
+```{r, echo=FALSE, warning=FALSE,message=FALSE, fig.align='center', fig.cap="Samples A, B, C with 3 rep"}
+#| label: fig-plate
+#| fig-height: 5
+# Load ggplate package
+library(ggplate)
+data(data_continuous_48_incomplete)
+# Check the structure of the dataset
+#str(data_continuous_48_incomplete)
+#> tibble [48 × 2] (S3: tbl_df/tbl/data.frame)
+#>  $ Value: num [1:48] 1.14 0.46 0.72 0.17 NA NA NA NA 1.37 0.37 ...
+#>  $ well : chr [1:48] "A1" "A2" "A3" "A4" ...
+modified_values <- c(0.2, 0.2, 0.2, NA, NA, NA, NA, NA, 0.5, 0.5, 0.5, NA, NA, NA, NA, NA, 0.1, 0.1, 0.1, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA,NA)
+
+# Update the "Value" column with modified values
+data_continuous_48_incomplete$Value <- modified_values
+
+# Create a 48-well plot with adjusted legend limits
+plate_plot(
+  data = data_continuous_48_incomplete,
+  position = well,
+  value = Value,
+  plate_type = "round",
+  plate_size = 48,
+    show_legend = FALSE,
+)
+
+```
+
+>  Se ordena la matriz de entrada de acuerdo a las `réplicas` y las muestras.
+
+
+
+
+## Programa
+
+```{markdown}
+#| fig-height: 10
+import argparse
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+def plot_time_vs_average(file_path, rep, sep, output_graph, sample_names):
+      """
+        Plot Time vs Average per Sample of the measurements 
+        Plots the results of fluorescence measurements of liquid samples from 96-well plates (may be any desired matrix).
+        This script reads a CSV file containing time series data and plots the average values per sample over time.
+
+        Usage:
+            python plot_data_96plate.py <file> [--rep <step_size>] [--sep <delimiter>] [--output <output_file>] [--sample-names <names>...]
+
+        Arguments:
+            file              : Path to the input CSV file. It must contain the report of each of the samples pre-ordered like the example data
+            --rep <number of replicates> : Number of replicates for sample, in the code it names "Step size for sub-coordinates" (default: 3).
+            --sep <delimiter> : Delimiter used in the input file (default: ',').
+            --output <output_file> : File name to save the output graph.
+            --sample-names <names> : Custom names for the samples in the plot.
+
+        Example:
+            python plot_script.py data.csv --rep 3 --sep ';' --output graph.png --sample-names Blank Mutant_01 Mutant_02
+            
+        Example Data:
+                        A1    A2    A3    A4    A5    A6    A7    A8    A9
+                    Time                                                          
+                    0:29:10   2004  1974  1942  1808  1799  1806  2526  1899  1899
+                    0:59:10   1794  1819  1911  1722  1675  1734  2416  1738  1738
+                    1:29:10   1845  1902  1871  1738  1822  1655  2354  1758  1758 
+                    ...
+
+    """
+    # Read the file and retrieve the column names
+    df = pd.read_csv(file_path, index_col=0, sep=sep)
+
+    coordinates = df.columns.tolist()
+
+    sub_coordinates_dict = {}
+
+    for i in range(0, len(coordinates)-rep+1, rep):
+        sub_coordinates = coordinates[i:i+rep]
+        key = f'Sample_{i//rep + 1}'  # Generate unique key
+        sub_coordinates_dict[key] = sub_coordinates
+
+    # Calculate average per sample on each time
+    averages_per_time = {}
+    for time, row in df.iterrows():
+        for key, sub_coordinates in sub_coordinates_dict.items():
+            sample_values = row[sub_coordinates]
+            average = sample_values.mean()
+            if time in averages_per_time:
+                averages_per_time[time][key] = average
+            else:
+                averages_per_time[time] = {key: average}
+
+    # Prepare data for plotting
+    data = []
+    for time, averages in averages_per_time.items():
+        for sample, average in averages.items():
+            data.append({'Time': time, 'Sample': sample, 'Average': average})
+
+    # Convert data to DataFrame
+    df_plot = pd.DataFrame(data)
+
+    # Customize sample names
+    if sample_names:
+        sample_names_dict = dict(zip(sub_coordinates_dict.keys(), sample_names))
+        df_plot['Sample'] = df_plot['Sample'].replace(sample_names_dict)
+
+    # Plotting
+    sns.scatterplot(data=df_plot, x='Time', y='Average', hue='Sample')
+    plt.xticks(rotation=90)
+
+    # Export the plot
+    if output_graph:
+        plt.savefig(output_graph)
+
+    plt.show()
+
+if __name__ == '__main__':
+    # Create argument parser
+    parser = argparse.ArgumentParser(description='Plot time vs average per sample.')
+
+    # Add arguments
+    parser.add_argument('file', type=argparse.FileType('r'), help='Input file path')
+    parser.add_argument('--rep', type=int, default=3, help='Step size for sub-coordinates for the sample (default: 3)')
+    parser.add_argument('--sep', type=str, default=',', help='Delimiter for input file (default: ",")')
+    parser.add_argument('--output', type=str, help='Output graph file name')
+    parser.add_argument('--sample-names', type=str, nargs='+', help='Customize sample names')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Call the plot function with provided arguments
+    plot_time_vs_average(args.file.name, args.rep, args.sep, args.output, args.sample_names)
+
+```
+ 
+## Dependecias 
+
+*Dependencies* 
+
+The code requires the following dependencies: 
+
+-  pandas (version 1.3.3 or above)
+-  seaborn (version 0.11.2 or above)
+-  matplotlib (version 3.4.3 or above)
+-  module:
+-  argparse
+-  Sys
+-  and python3.11 or 3
+
+
+#  Manual
+
+El cómo:
+
+    python plot_script.py data.csv --rep 3 --sep ';' --output graph.png --sample-names Blank Mutant_01 Mutant_02
+
+
+
+## Manual
+
+*usage:*
+
+```{markdown}
+Usage:
+            python plot_data_96plate.py <file> [--rep <step_size>] [--sep <delimiter>] [--output <output_file>] [--sample-names <names>...]
+
+```
+
+. . .
+
+*Arguments:*
+
+```{markdown}
+Arguments:
+            file              : Path to the input CSV file. It must contain the report of each of the samples pre-ordered like the example data
+            --rep <number of replicates> : Number of replicates for sample, in the code it names "Step size for sub-coordinates" (default: 3).
+            --sep <delimiter> : Delimiter used in the input file (default: ',').
+            --output <output_file> : File name to save the output graph.
+            --sample-names <names> : Custom names for the samples in the plot.
+```
+
+. . .
+
+Example:
+
+```{markdown}
+Example:
+            python plot_script.py data.csv --rep 3 --sep ';' --output graph.png --sample-names Blank Mutant_01 Mutant_02
+```
+
+
+
+## Tomar en cuenta: 
+
+1. **Datos ordenados**
+1. *Número de columnas*
+1. *Solo calcula el promedio de las réplicas y grafica*
+
+
+
+## Lectura del código:
+
+```python
+import argparse
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+def plot_time_vs_average(file_path, rep, sep, output_graph, sample_names):
+      """
+        Plot Time vs Average per Sample of the measurements 
+        Plots the results of fluorescence measurements of liquid samples from 96-well plates (may be any desired matrix).
+        This script reads a CSV file containing time series data and plots the average values per sample over time.
+
+        Usage:
+            python plot_data_96plate.py <file> [--rep <step_size>] [--sep <delimiter>] [--output <output_file>] [--sample-names <names>...]
+
+        Arguments:
+            file              : Path to the input CSV file. It must contain the report of each of the samples pre-ordered like the example data
+            --rep <number of replicates> : Number of replicates for sample, in the code it names "Step size for sub-coordinates" (default: 3).
+            --sep <delimiter> : Delimiter used in the input file (default: ',').
+            --output <output_file> : File name to save the output graph.
+            --sample-names <names> : Custom names for the samples in the plot.
+
+        Example:
+            python plot_script.py data.csv --rep 3 --sep ';' --output graph.png --sample-names Blank Mutant_01 Mutant_02
+            
+        Example Data:
+                        A1    A2    A3    A4    A5    A6    A7    A8    A9
+                    Time                                                          
+                    0:29:10   2004  1974  1942  1808  1799  1806  2526  1899  1899
+                    0:59:10   1794  1819  1911  1722  1675  1734  2416  1738  1738
+                    1:29:10   1845  1902  1871  1738  1822  1655  2354  1758  1758 
+                    ...
+
+    """
+    # Read the file and retrieve the column names
+    df = pd.read_csv(file_path, index_col=0, sep=sep)
+
+    coordinates = df.columns.tolist()
+
+    sub_coordinates_dict = {}
+
+    for i in range(0, len(coordinates)-rep+1, rep):
+        sub_coordinates = coordinates[i:i+rep]
+        key = f'Sample_{i//rep + 1}'  # Generate unique key
+        sub_coordinates_dict[key] = sub_coordinates
+
+    # Calculate average per sample on each time
+    averages_per_time = {}
+    for time, row in df.iterrows():
+        for key, sub_coordinates in sub_coordinates_dict.items():
+            sample_values = row[sub_coordinates]
+            average = sample_values.mean()
+            if time in averages_per_time:
+                averages_per_time[time][key] = average
+            else:
+                averages_per_time[time] = {key: average}
+
+    # Prepare data for plotting
+    data = []
+    for time, averages in averages_per_time.items():
+        for sample, average in averages.items():
+            data.append({'Time': time, 'Sample': sample, 'Average': average})
+
+    # Convert data to DataFrame
+    df_plot = pd.DataFrame(data)
+
+    # Customize sample names
+    if sample_names:
+        sample_names_dict = dict(zip(sub_coordinates_dict.keys(), sample_names))
+        df_plot['Sample'] = df_plot['Sample'].replace(sample_names_dict)
+
+    # Plotting
+    sns.scatterplot(data=df_plot, x='Time', y='Average', hue='Sample')
+    plt.xticks(rotation=90)
+
+    # Export the plot
+    if output_graph:
+        plt.savefig(output_graph)
+
+    plt.show()
+
+if __name__ == '__main__':
+    # Create argument parser
+    parser = argparse.ArgumentParser(description='Plot time vs average per sample.')
+
+    # Add arguments
+    parser.add_argument('file', type=argparse.FileType('r'), help='Input file path')
+    parser.add_argument('--rep', type=int, default=3, help='Step size for sub-coordinates for the sample (default: 3)')
+    parser.add_argument('--sep', type=str, default=',', help='Delimiter for input file (default: ",")')
+    parser.add_argument('--output', type=str, help='Output graph file name')
+    parser.add_argument('--sample-names', type=str, nargs='+', help='Customize sample names')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Call the plot function with provided arguments
+    plot_time_vs_average(args.file.name, args.rep, args.sep, args.output, args.sample_names)
+```
+
+## Resultados {.smaller}
+
+### `Dos tipos de gráficas`
+
+::: columns
+::: {.column width="50%"}
+![--sample-names personalizados](graph.png)
+:::
+
+::: {.column width="50%"}
+![Sin personalizar](graph_sin.png){height=100%}
+
+:::
+:::
